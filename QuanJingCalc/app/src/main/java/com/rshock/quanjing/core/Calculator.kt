@@ -26,7 +26,6 @@ object Calculator {
         return out.sortedByDescending { score(it) }
     }
 
-    /** 与 HTML 原版 countValue 保持一致 */
     private fun score(r: CalcResult): Int {
         val maxLv = r.heroes.maxOf { it.level }
         return maxLv + (100 - r.heroes.size) + (100 - r.selectedTags.size)
