@@ -89,21 +89,17 @@ object AutoRunner {
         val clicker = ClickAccessibilityService.instance ?: return
         val colorCfg = ConfigStore.buildColorCfg(full, auto)
         val BLUE = 0xFF2EBAF8.toInt() // 已完成/选中的蓝条色
+        val START_COLOR = 0xFFA1C2FF.toInt() // 开始招募的颜色
 
         onProgress("准备启动…")
         delay(500)
 
         while (!shouldStop()) {
             // ============ 1. 预检：是否已处于招募条件界面？ ============
-            val inRecruitUI = StateDetector.hasColorInRect(
-                Rect(
-                    full.timeX.toInt() - 50,
-                    full.timeY.toInt() - 50,
-                    full.timeX.toInt() + 50,
-                    full.timeY.toInt() + 50
-                ),
-                BLUE, threshold = 60, ratio = 0.05f
-            )
+            val (startX, startY) = full.startPoint()
+            val startRect = Rect(startX.toInt() - 50, startY.toInt() - 50, startX.toInt() + 50, startY.toInt() + 50)
+
+            val inRecruitUI = StateDetector.hasColorInRect(startRect, START_COLOR, threshold = 60, ratio = 0.05f)
 
             if (inRecruitUI) {
                 try {
@@ -124,28 +120,17 @@ object AutoRunner {
                 )
 
                 val isCompleted = StateDetector.hasColorInRect(checkRect, BLUE, 60, 0.1f)
-                val isRecruited =
-                    StateDetector.hasColorInRect(checkRect, ConfigStore.COLOR_URGENT, 40, 0.1f)
+                val isRecruited = StateDetector.hasColorInRect(checkRect, ConfigStore.COLOR_URGENT, 40, 0.1f)
 
                 if (isCompleted) {
                     continue
                 } else if (isRecruited) {
-                    continue // ★ 核心修改：这里直接跳过，不点确定
+                    continue
                 } else {
-                    // 未招募：正常进入
                     clicker.tap(rank.first, rank.second)
-
-                    // 死等进入内循环界面
+                    // 等进入内循环界面（检测开始招募按钮出现）
                     while (!shouldStop()) {
-                        val entered = StateDetector.hasColorInRect(
-                            Rect(
-                                full.timeX.toInt() - 50,
-                                full.timeY.toInt() - 50,
-                                full.timeX.toInt() + 50,
-                                full.timeY.toInt() + 50
-                            ),
-                            BLUE, 60, 0.05f
-                        )
+                        val entered = StateDetector.hasColorInRect(startRect, START_COLOR, threshold = 60, ratio = 0.05f)
                         if (entered) break
                         delay(150)
                     }
@@ -154,21 +139,19 @@ object AutoRunner {
                     try {
                         runInnerLoop(roiSet, onProgress, shouldStop, onLeaderFound)
 
-                        // 死等退出内循环界面（连续 3 次未命中蓝条）
+                        // 退出内循环界面（连续 3 次未命中开始招募）
                         var missCount = 0
-                        val timeRect = Rect(
-                            full.timeX.toInt() - 50,
-                            full.timeY.toInt() - 50,
-                            full.timeX.toInt() + 50,
-                            full.timeY.toInt() + 50
-                        )
                         while (!shouldStop() && missCount < 3) {
-                            val stillBlue = StateDetector.hasColorInRect(timeRect, BLUE, 60, 0.05f)
-                            if (stillBlue) missCount = 0 else missCount++
+                            val stillThere = StateDetector.hasColorInRect(startRect, START_COLOR, 60, 0.05f)
+                            if (stillThere) {
+                                missCount = 0
+                            } else {
+                                missCount++
+                            }
                             delay(150)
                         }
                     } catch (e: LeaderFoundException) {
-                        onProgress("遇领袖，彻底终止全自动")
+                        onProgress("遇领袖，终止全自动")
                         return
                     }
                 }
@@ -193,7 +176,7 @@ object AutoRunner {
                     delay(150)
                     clicker.tap(cx, cy)
 
-                    // ★ 新增：死等该位置出现蓝条，代表传输完成再点下一个
+                    // 死等该位置出现蓝条，代表传输完成再点下一个
                     while (!shouldStop()) {
                         val ok = StateDetector.hasColorInRect(checkRect, BLUE, 60, 0.05f)
                         if (ok) break
@@ -202,16 +185,15 @@ object AutoRunner {
                     if (shouldStop()) return
                 }
             }
+
             // 接下来点一键录取
             val (rx, ry) = auto.recruit()
             clicker.tap(rx, ry)
 
             // 等黑屏
-            val recruitRect =
-                Rect(rx.toInt() - 50, ry.toInt() - 50, rx.toInt() + 50, ry.toInt() + 50)
+            val recruitRect = Rect(rx.toInt() - 50, ry.toInt() - 50, rx.toInt() + 50, ry.toInt() + 50)
             while (!shouldStop()) {
-                val isBlack =
-                    StateDetector.hasColorInRect(recruitRect, 0xFF000000.toInt(), 50, 0.3f)
+                val isBlack = StateDetector.hasColorInRect(recruitRect, 0xFF000000.toInt(), 50, 0.3f)
                 if (isBlack) break
                 delay(150)
             }
@@ -219,8 +201,7 @@ object AutoRunner {
 
             // SKIP
             colorCfg.skipDone?.let { cp ->
-                val skipRect =
-                    Rect(cp.x.toInt() - 50, cp.y.toInt() - 50, cp.x.toInt() + 50, cp.y.toInt() + 50)
+                val skipRect = Rect(cp.x.toInt() - 50, cp.y.toInt() - 50, cp.x.toInt() + 50, cp.y.toInt() + 50)
                 while (!shouldStop()) {
                     val ready = StateDetector.hasColorInRect(skipRect, cp.color, 60, 0.05f)
                     if (ready) {
@@ -233,6 +214,7 @@ object AutoRunner {
                 }
             }
             if (shouldStop()) return
+
             // 关闭
             var closeOk = false
             var retry = 0
@@ -247,7 +229,7 @@ object AutoRunner {
                     delay(300)
                 }
             }
-
+            if (!shouldStop()) delay(1000)
         }
     }
 
@@ -261,6 +243,7 @@ object AutoRunner {
         val full = roiSet.full ?: return false
         val clicker = ClickAccessibilityService.instance ?: return false
         val BLUE = 0xFF2EBAF8.toInt()
+
         onProgress("点时间")
         delay(50)
         val (tx, ty) = full.timePoint()
@@ -269,7 +252,7 @@ object AutoRunner {
         var ocrReport: Report2.Success? = null
         var retryCount = 0
 
-        // 核心死磕循环：最多重试 3 次
+        // 核心循环：最多重试 3 次
         while (!shouldStop() && retryCount < 3) {
             if (ocrReport == null) {
                 onProgress("识别中")
@@ -279,7 +262,7 @@ object AutoRunner {
                 } else {
                     onProgress("OCR 失败，重试")
                     retryCount++
-                    delay(100) // ★ 只等 100 毫秒，快速重试
+                    delay(100)
                     continue
                 }
             }
@@ -312,7 +295,6 @@ object AutoRunner {
             }
 
             if (tagsToClickNow.isEmpty()) {
-                onProgress("词条已全部选中")
                 break // 都蓝了，去点开始招募
             }
 
@@ -322,10 +304,7 @@ object AutoRunner {
                 clicker.tap(r.left.toFloat(), r.top.toFloat())
                 delay(SettingsStore.delayTag.toLong())
             }
-            delay(100)
-
-            // ★ 点击完之后，稍微给 UI 一点点高亮反应的时间，然后立刻进入下一次判定
-            delay(SettingsStore.delayTag.toLong())
+            delay(150)
         }
 
         if (shouldStop()) return false
@@ -333,18 +312,6 @@ object AutoRunner {
         val (sx, sy) = full.startPoint()
         delay(SettingsStore.delayStart.toLong())
         clicker.tap(sx, sy)
-        // ★ 出内循环：死等“时间”位置的蓝条连续 3 次消失
-        var missCount = 0
-        val timeRect = Rect(tx.toInt() - 50, ty.toInt() - 50, tx.toInt() + 50, ty.toInt() + 50)
-        while (!shouldStop() && missCount < 3) {
-            val stillBlue = StateDetector.hasColorInRect(timeRect, BLUE, 60, 0.05f)
-            if (stillBlue) {
-                missCount = 0 // 只要看到一次蓝条，重置计数
-            } else {
-                missCount++ // 没看到蓝条，累计一次
-            }
-            delay(150) // 每次轮询间隔 150ms
-        }
 
         return true
     }

@@ -32,7 +32,7 @@ object SettingsStore {
     const val DEFAULT_BALL_SIZE = 56
     const val DEFAULT_BALL_SHAPE = "circle"
     const val DEFAULT_DELAY_TAG = 100
-    const val DEFAULT_DELAY_START = 100
+    const val DEFAULT_DELAY_START = 50
 
     private var appCtx: Context? = null
 
