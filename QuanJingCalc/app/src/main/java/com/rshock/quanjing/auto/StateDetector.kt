@@ -115,4 +115,40 @@ object StateDetector {
         android.util.Log.w("QJ_State", "超时！未达成连续命中: $stateName")
         return false
     }
+
+    /**
+     * 判断矩形区域内是否包含目标颜色（用于检测词条是否变蓝）
+     * @param threshold 容差
+     * @param ratio 区域内目标颜色的像素占比达到多少算命中（0.1 即 10%）
+     */
+    suspend fun hasColorInRect(
+        rect: android.graphics.Rect,
+        targetColor: Int,
+        threshold: Int = 50,
+        ratio: Float = 0.1f
+    ): Boolean {
+        val bmp = ScreenCaptureService.instance?.capture() ?: return false
+        return try {
+            var matchCount = 0
+            var totalCount = 0
+            // 步长设为 2 或更大，可以加快扫描速度
+            val step = 2
+            for (y in rect.top until rect.bottom step step) {
+                for (x in rect.left until rect.right step step) {
+                    // 防止越界
+                    val safeX = x.coerceIn(0, bmp.width - 1)
+                    val safeY = y.coerceIn(0, bmp.height - 1)
+                    val pixel = bmp.getPixel(safeX, safeY)
+                    if (isColorMatch(pixel, targetColor, threshold)) {
+                        matchCount++
+                    }
+                    totalCount++
+                }
+            }
+            totalCount > 0 && (matchCount.toFloat() / totalCount) >= ratio
+        } finally {
+            bmp.recycle()
+        }
+    }
+
 }

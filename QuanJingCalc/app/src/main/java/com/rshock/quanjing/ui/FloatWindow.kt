@@ -54,13 +54,27 @@ class FloatWindow private constructor(private val ctx: Context) {
             return
         }
         isFullAutoRunning = true
-
         // 悬浮球变红 + 显示"停"
         (ball as? TextView)?.apply {
             text = "停"
-            setBackgroundColor(0xCCFF4444.toInt())
-        }
+            val sizeDp = SettingsStore.ballSizeDp
+            val alpha = SettingsStore.ballAlpha
+            val shape = SettingsStore.ballShape
+            val sizePx = (sizeDp * ctx.resources.displayMetrics.density).toInt()
+            val alphaInt = (alpha * 255).toInt().coerceIn(0, 255)
+            // 红色的半透明底色
+            val redColor = (alphaInt shl 24) or 0xFF4444
 
+            background = android.graphics.drawable.GradientDrawable().apply {
+                if (shape == "circle") {
+                    this.shape = android.graphics.drawable.GradientDrawable.OVAL
+                } else {
+                    this.shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                    cornerRadius = sizePx * 0.15f
+                }
+                setColor(redColor)
+            }
+        }
         fullAutoJob = CoroutineScope(Dispatchers.Default).launch {
             try {
                 AutoRunner.runFullAuto(
@@ -558,19 +572,22 @@ class FloatWindow private constructor(private val ctx: Context) {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             setOnClickListener {
                 try { wm.removeView(root) } catch (_: Exception) {}
-                HistoryStore.add(
-                    ctx,
-                    report.tags.joinToString("\t"),
-                    combo.tags.joinToString("\t") + " → " + combo.topLevel + "★ (领袖)"
-                )
-                CoroutineScope(Dispatchers.Default).launch {
-                    try {
-                        AutoRunner.autoPick(combo, report.tagRects)
-                    } catch (_: Exception) {}
-                    mainHandler.post {
-                        showToast("已选中：${combo.tags.joinToString("/")}")
+
+                mainHandler.postDelayed({
+                    HistoryStore.add(
+                        ctx,
+                        report.tags.joinToString("\t"),
+                        combo.tags.joinToString("\t") + " → " + combo.topLevel + "★ (领袖)"
+                    )
+                    CoroutineScope(Dispatchers.Default).launch {
+                        try {
+                            AutoRunner.autoPick(combo, report.tagRects)
+                        } catch (_: Exception) {}
+                        mainHandler.post {
+                            showToast("已选中：${combo.tags.joinToString("/")}")
+                        }
                     }
-                }
+                }, 200)
             }
         })
 

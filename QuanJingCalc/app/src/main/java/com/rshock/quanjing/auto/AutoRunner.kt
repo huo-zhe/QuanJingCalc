@@ -21,6 +21,7 @@ object AutoRunner {
             val tagRects: Map<String, Rect>,
             val ocrAtPos: Array<String?>
         ) : Report2()
+
         data class Failed(
             val reason: String,
             val ocrAtPos: Array<String?>? = null
@@ -32,7 +33,6 @@ object AutoRunner {
         val bmp = cap.capture() ?: return Report2.Failed("截屏失败")
         return try {
             val full = roiSet.full ?: return Report2.Failed("未校准")
-            // 这里调用无参方法
             val rects = full.toPixelRects()
             val ocrAtPos = InputTagReader.readAtPositions(bmp, rects)
 
@@ -51,7 +51,8 @@ object AutoRunner {
                     for (i in 1..5) {
                         val cx = centers[i - 1].first
                         val cy = centers[i - 1].second
-                        tagRects[tags[i - 1]] = Rect(cx.toInt(), cy.toInt(), cx.toInt() + 1, cy.toInt() + 1)
+                        tagRects[tags[i - 1]] =
+                            Rect(cx.toInt(), cy.toInt(), cx.toInt() + 1, cy.toInt() + 1)
                     }
                     val suggestions = Solver.solve(tags)
                     return Report2.Success(tags, Solver.getAdvice(suggestions), tagRects, ocrAtPos)
@@ -67,10 +68,15 @@ object AutoRunner {
     suspend fun autoPick(suggestion: Suggestion, tagRects: Map<String, Rect>) {
         for (tag in suggestion.tags) {
             val r = tagRects[tag] ?: continue
-            ClickAccessibilityService.instance?.tap(r.left.toFloat(), r.top.toFloat())
-            delay(SettingsStore.delayTag.toLong())
+            val clickX = r.left.toFloat()
+            val clickY = r.top.toFloat()
+
+            ClickAccessibilityService.instance?.tap(clickX, clickY)
+            kotlinx.coroutines.delay(SettingsStore.delayTag.toLong())
         }
     }
+
+    // ================= 全自动功能 =================
 
     suspend fun runFullAuto(
         roiSet: ConfigStore.RoiSet,
@@ -82,92 +88,152 @@ object AutoRunner {
         val auto = roiSet.auto ?: return
         val clicker = ClickAccessibilityService.instance ?: return
         val colorCfg = ConfigStore.buildColorCfg(full, auto)
+        val BLUE = 0xFF2EBAF8.toInt() // 已完成/选中的蓝条色
 
         onProgress("准备启动…")
-        delay(1000)
-
-        val ranks = listOf(auto.rank1(), auto.rank2(), auto.rank3(), auto.rank4())
+        delay(500)
 
         while (!shouldStop()) {
-            for ((idx, rank) in ranks.withIndex()) {
-                if (shouldStop()) return
-                clicker.tap(rank.first, rank.second)
+            // ============ 1. 预检：是否已处于招募条件界面？ ============
+            val inRecruitUI = StateDetector.hasColorInRect(
+                Rect(
+                    full.timeX.toInt() - 50,
+                    full.timeY.toInt() - 50,
+                    full.timeX.toInt() + 50,
+                    full.timeY.toInt() + 50
+                ),
+                BLUE, threshold = 60, ratio = 0.05f
+            )
 
-                val cancelCp = colorCfg.cancelPoint
-                if (cancelCp != null) {
-                    while (!shouldStop()) {
-                        val entered = StateDetector.waitForColor(
-                            x = cancelCp.x.toInt(), y = cancelCp.y.toInt(),
-                            targetColor = cancelCp.color, timeoutMs = 1000, stateName = "进入"
-                        )
-                        if (entered) break
-                    }
-                }
-                if (shouldStop()) return
-
+            if (inRecruitUI) {
                 try {
-                    val innerOk = runInnerLoop(roiSet, onProgress, shouldStop, onLeaderFound)
-                    if (!innerOk && shouldStop()) return
-
-                    if (cancelCp != null) {
-                        while (!shouldStop()) {
-                            val exited = StateDetector.waitForColorGoneStable(
-                                x = cancelCp.x.toInt(), y = cancelCp.y.toInt(),
-                                targetColor = cancelCp.color, missCount = 3, timeoutMs = 2000, stateName = "退出"
-                            )
-                            if (exited) break
-                        }
-                    }
+                    runInnerLoop(roiSet, onProgress, shouldStop, onLeaderFound)
                 } catch (e: LeaderFoundException) {
-                    onProgress("发现领袖！！！，已终止")
                     return
                 }
-                if (shouldStop()) return
             }
 
+            // ============ 2. 智能外循环：点谁就检测谁 ============
+            val ranks = listOf(auto.rank1(), auto.rank2(), auto.rank3(), auto.rank4())
             for ((idx, rank) in ranks.withIndex()) {
                 if (shouldStop()) return
-                clicker.tap(rank.first, rank.second)
 
-                val (cx, cy) = auto.confirm()
-                while (!shouldStop()) {
-                    val ready = StateDetector.waitForColor(cx.toInt(), cy.toInt(), ConfigStore.COLOR_CONFIRM, 1000, "确定")
-                    if (ready) break
-                }
-                if (shouldStop()) return
-                delay(150)
-                clicker.tap(cx, cy)
+                val checkRect = Rect(
+                    rank.first.toInt() - 50, rank.second.toInt() - 50,
+                    rank.first.toInt() + 50, rank.second.toInt() + 50
+                )
 
-                while (!shouldStop()) {
-                    val ok = StateDetector.waitForColor(rank.first.toInt(), rank.second.toInt(), 0xFF2EBAF8.toInt(), 1000, "蓝条")
-                    if (ok) break
+                val isCompleted = StateDetector.hasColorInRect(checkRect, BLUE, 60, 0.1f)
+                val isRecruited =
+                    StateDetector.hasColorInRect(checkRect, ConfigStore.COLOR_URGENT, 40, 0.1f)
+
+                if (isCompleted) {
+                    continue
+                } else if (isRecruited) {
+                    continue // ★ 核心修改：这里直接跳过，不点确定
+                } else {
+                    // 未招募：正常进入
+                    clicker.tap(rank.first, rank.second)
+
+                    // 死等进入内循环界面
+                    while (!shouldStop()) {
+                        val entered = StateDetector.hasColorInRect(
+                            Rect(
+                                full.timeX.toInt() - 50,
+                                full.timeY.toInt() - 50,
+                                full.timeX.toInt() + 50,
+                                full.timeY.toInt() + 50
+                            ),
+                            BLUE, 60, 0.05f
+                        )
+                        if (entered) break
+                        delay(150)
+                    }
+                    if (shouldStop()) return
+
+                    try {
+                        runInnerLoop(roiSet, onProgress, shouldStop, onLeaderFound)
+
+                        // 死等退出内循环界面（连续 3 次未命中蓝条）
+                        var missCount = 0
+                        val timeRect = Rect(
+                            full.timeX.toInt() - 50,
+                            full.timeY.toInt() - 50,
+                            full.timeX.toInt() + 50,
+                            full.timeY.toInt() + 50
+                        )
+                        while (!shouldStop() && missCount < 3) {
+                            val stillBlue = StateDetector.hasColorInRect(timeRect, BLUE, 60, 0.05f)
+                            if (stillBlue) missCount = 0 else missCount++
+                            delay(150)
+                        }
+                    } catch (e: LeaderFoundException) {
+                        onProgress("遇领袖，彻底终止全自动")
+                        return
+                    }
                 }
-                if (shouldStop()) return
             }
 
+            // ============ 3. 统一确定 & 一键录取 & 跳过 & 关闭 ============
             if (shouldStop()) return
+
+            // ★ 统一处理前面跳过的“已招募”榜单
+            for ((idx, rank) in ranks.withIndex()) {
+                val checkRect = Rect(rank.first.toInt() - 50, rank.second.toInt() - 50, rank.first.toInt() + 50, rank.second.toInt() + 50)
+                if (StateDetector.hasColorInRect(checkRect, ConfigStore.COLOR_URGENT, 40, 0.1f)) {
+                    clicker.tap(rank.first, rank.second)
+
+                    val (cx, cy) = auto.confirm()
+                    val confirmRect = Rect(cx.toInt() - 50, cy.toInt() - 50, cx.toInt() + 50, cy.toInt() + 50)
+                    while (!shouldStop()) {
+                        if (StateDetector.hasColorInRect(confirmRect, ConfigStore.COLOR_CONFIRM, 60, 0.05f)) break
+                        delay(100)
+                    }
+                    if (shouldStop()) return
+                    delay(150)
+                    clicker.tap(cx, cy)
+
+                    // ★ 新增：死等该位置出现蓝条，代表传输完成再点下一个
+                    while (!shouldStop()) {
+                        val ok = StateDetector.hasColorInRect(checkRect, BLUE, 60, 0.05f)
+                        if (ok) break
+                        delay(150)
+                    }
+                    if (shouldStop()) return
+                }
+            }
+            // 接下来点一键录取
             val (rx, ry) = auto.recruit()
             clicker.tap(rx, ry)
 
+            // 等黑屏
+            val recruitRect =
+                Rect(rx.toInt() - 50, ry.toInt() - 50, rx.toInt() + 50, ry.toInt() + 50)
             while (!shouldStop()) {
-                val isBlack = StateDetector.waitForColor(rx.toInt(), ry.toInt(), 0xFF000000.toInt(), 1000, "黑屏")
+                val isBlack =
+                    StateDetector.hasColorInRect(recruitRect, 0xFF000000.toInt(), 50, 0.3f)
                 if (isBlack) break
+                delay(150)
             }
             if (shouldStop()) return
 
+            // SKIP
             colorCfg.skipDone?.let { cp ->
+                val skipRect =
+                    Rect(cp.x.toInt() - 50, cp.y.toInt() - 50, cp.x.toInt() + 50, cp.y.toInt() + 50)
                 while (!shouldStop()) {
-                    val ready = StateDetector.waitForColorStable(cp.x.toInt(), cp.y.toInt(), cp.color, 3, 1000, "SKIP")
+                    val ready = StateDetector.hasColorInRect(skipRect, cp.color, 60, 0.05f)
                     if (ready) {
                         clicker.tap(cp.x, cp.y)
                         delay(100)
                         clicker.tap(cp.x, cp.y)
                         break
                     }
+                    delay(150)
                 }
             }
             if (shouldStop()) return
-
+            // 关闭
             var closeOk = false
             var retry = 0
             val (clx, cly) = auto.close()
@@ -176,12 +242,16 @@ object AutoRunner {
                 closeOk = colorCfg.closeDone?.let { cp ->
                     StateDetector.waitForColorStable(cp.x.toInt(), cp.y.toInt(), cp.color, 3, 1500, "关闭")
                 } ?: true
-                if (!closeOk) { retry++; delay(300) }
+                if (!closeOk) {
+                    retry++
+                    delay(300)
+                }
             }
-            if (!shouldStop()) delay(1000)
+
         }
     }
 
+    // ================= 内循环 (极速重试) =================
     private suspend fun runInnerLoop(
         roiSet: ConfigStore.RoiSet,
         onProgress: (String) -> Unit,
@@ -190,30 +260,92 @@ object AutoRunner {
     ): Boolean {
         val full = roiSet.full ?: return false
         val clicker = ClickAccessibilityService.instance ?: return false
-
+        val BLUE = 0xFF2EBAF8.toInt()
         onProgress("点时间")
+        delay(50)
         val (tx, ty) = full.timePoint()
         clicker.tap(tx, ty)
 
-        onProgress("识别中")
-        val report = analyze(roiSet)
-        if (report !is Report2.Success) return false
+        var ocrReport: Report2.Success? = null
+        var retryCount = 0
 
-        when (val a = report.advice) {
-            is Advice.NoMatch -> return false
-            is Advice.NoLeader -> {
-                val best = a.allCombos.firstOrNull() ?: return false
-                autoPick(best, report.tagRects)
-                delay(SettingsStore.delayStart.toLong())
-                onProgress("点开始招募")
-                val (sx, sy) = full.startPoint()
-                clicker.tap(sx, sy)
-                return true
+        // 核心死磕循环：最多重试 3 次
+        while (!shouldStop() && retryCount < 3) {
+            if (ocrReport == null) {
+                onProgress("识别中")
+                val report = analyze(roiSet)
+                if (report is Report2.Success) {
+                    ocrReport = report
+                } else {
+                    onProgress("OCR 失败，重试")
+                    retryCount++
+                    delay(100) // ★ 只等 100 毫秒，快速重试
+                    continue
+                }
             }
-            is Advice.HasLeader -> {
+
+            val report = ocrReport!!
+            val advice = report.advice
+            if (advice is Advice.HasLeader) {
                 onLeaderFound(report)
                 throw LeaderFoundException()
             }
+            if (advice is Advice.NoMatch) {
+                onProgress("无匹配组合")
+                return false
+            }
+
+            val best = (advice as Advice.NoLeader).allCombos.firstOrNull() ?: return false
+            val tagsToPick = best.tags
+
+            // 检查这 5 个框哪些变蓝了
+            val pixelRects = full.toPixelRects()
+            val blueStatus = BooleanArray(5)
+            for (i in 0..4) {
+                blueStatus[i] = StateDetector.hasColorInRect(pixelRects[i], BLUE, 60, 0.1f)
+            }
+
+            // 找出 OCR 结果中还没变蓝的词条
+            val tagsToClickNow = tagsToPick.filterIndexed { _, tag ->
+                val posIndex = report.tags.indexOf(tag)
+                if (posIndex in 0..4) !blueStatus[posIndex] else true
+            }
+
+            if (tagsToClickNow.isEmpty()) {
+                onProgress("词条已全部选中")
+                break // 都蓝了，去点开始招募
+            }
+
+            // 点击没变蓝的词条
+            for (tag in tagsToClickNow) {
+                val r = report.tagRects[tag] ?: continue
+                clicker.tap(r.left.toFloat(), r.top.toFloat())
+                delay(SettingsStore.delayTag.toLong())
+            }
+            delay(100)
+
+            // ★ 点击完之后，稍微给 UI 一点点高亮反应的时间，然后立刻进入下一次判定
+            delay(SettingsStore.delayTag.toLong())
         }
+
+        if (shouldStop()) return false
+        onProgress("点开始招募")
+        val (sx, sy) = full.startPoint()
+        delay(SettingsStore.delayStart.toLong())
+        clicker.tap(sx, sy)
+        // ★ 出内循环：死等“时间”位置的蓝条连续 3 次消失
+        var missCount = 0
+        val timeRect = Rect(tx.toInt() - 50, ty.toInt() - 50, tx.toInt() + 50, ty.toInt() + 50)
+        while (!shouldStop() && missCount < 3) {
+            val stillBlue = StateDetector.hasColorInRect(timeRect, BLUE, 60, 0.05f)
+            if (stillBlue) {
+                missCount = 0 // 只要看到一次蓝条，重置计数
+            } else {
+                missCount++ // 没看到蓝条，累计一次
+            }
+            delay(150) // 每次轮询间隔 150ms
+        }
+
+        return true
     }
 }

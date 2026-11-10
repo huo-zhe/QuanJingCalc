@@ -26,12 +26,12 @@ object Calculator {
         return out.sortedByDescending { score(it) }
     }
 
+
     private fun score(r: CalcResult): Int {
         val maxLv = r.heroes.maxOf { it.level }
         return maxLv + (100 - r.heroes.size) + (100 - r.selectedTags.size)
     }
 
-    /** 含领袖才能匹配到 3 星角色 */
     fun isMatch(heroTags: List<String>, selected: List<String>): Boolean {
         if (selected.isEmpty()) return false
         val isLv3 = selected.any { it == "领袖" || it == "領袖" }
