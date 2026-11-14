@@ -256,67 +256,97 @@ object AutoRunner {
         val BLUE = 0xFF2EBAF8.toInt()
 
         var ocrReport: Report2.Success? = null
-        var retryCount = 0
-        // 核心循环：最多重试 3 次
-        while (!shouldStop() && retryCount < 3) {
-            if (ocrReport == null) {
-                onProgress("识别中")
-                val report = analyze(roiSet)
-                if (report is Report2.Success) {
-                    ocrReport = report
-                } else {
-                    onProgress("OCR 失败，重试")
-                    retryCount++
-                    delay(100)
-                    continue
-                }
-            }
+        var ocrRetryCount = 0
+        var timeClicked = false
 
-            val report = ocrReport!!
-            val advice = report.advice
-            if (advice is Advice.HasLeader) {
-                onLeaderFound(report)
-                throw LeaderFoundException()
+        // 1. 获取 OCR 结果（最多重试 3 次）
+        while (!shouldStop() && ocrRetryCount < 3) {
+            onProgress("识别中")
+            val report = analyze(roiSet)
+            if (report is Report2.Success) {
+                ocrReport = report
+                break
+            } else {
+                onProgress("OCR 失败，重试")
+                ocrRetryCount++
+                delay(100)
             }
-            if (advice is Advice.NoMatch) {
-                onProgress("无匹配组合")
-                return false
-            }
+        }
 
-            val best = (advice as Advice.NoLeader).allCombos.firstOrNull() ?: return false
-            val tagsToPick = best.tags
+        val report = ocrReport ?: return false
+        val advice = report.advice
 
-            // 检查这 5 个框哪些变蓝了
-            val pixelRects = full.toPixelRects()
-            val blueStatus = BooleanArray(5)
-            for (i in 0..4) {
-                blueStatus[i] = StateDetector.hasColorInRect(pixelRects[i], BLUE, 60, 0.1f)
-            }
-            // 找出 OCR 结果中还没变蓝的词条
-            val tagsToClickNow = tagsToPick.filterIndexed { _, tag ->
-                val posIndex = report.tags.indexOf(tag)
-                if (posIndex in 0..4) !blueStatus[posIndex] else true
-            }
-            if (tagsToClickNow.isEmpty()) {
-                onProgress("词条已全部选中")
-                break // 都蓝了，跳出循环去点时间和招募
-            }
-            // 点击没变蓝的词条
-            for (tag in tagsToClickNow) {
+        if (advice is Advice.HasLeader) {
+            onLeaderFound(report)
+            throw LeaderFoundException()
+        }
+        if (advice is Advice.NoMatch) {
+            onProgress("无匹配组合")
+            return false
+        }
+
+        val best = (advice as Advice.NoLeader).allCombos.firstOrNull() ?: return false
+        val tagsToPick = best.tags
+        val pixelRects = full.toPixelRects()
+
+        for (tag in tagsToPick) {
+            val posIndex = report.tags.indexOf(tag)
+            if (posIndex in 0..4) {
                 val r = report.tagRects[tag] ?: continue
                 clicker.tap(r.left.toFloat(), r.top.toFloat())
                 delay(SettingsStore.delayTag.toLong())
             }
-            delay(150)
+        }
+
+        if (!timeClicked) {
+            onProgress("点时间")
+            delay(50)
+            val (tx, ty) = full.timePoint()
+            clicker.tap(tx, ty)
+            timeClicked = true
+        }
+        // 3. 补点循环
+        while (!shouldStop()) {
+            delay(50)
+            // 查色：连查 3 次
+            var allBlue = true
+            val notBlueTags = mutableListOf<String>()
+
+            for (tag in tagsToPick) {
+                val posIndex = report.tags.indexOf(tag)
+                if (posIndex in 0..4) {
+                    val r = pixelRects[posIndex]
+                    var isThisTagBlue = false
+
+                    for (check in 0..2) {
+                        if (StateDetector.hasColorInRect(r, BLUE, 60, 0.1f)) {
+                            isThisTagBlue = true
+                            break
+                        }
+                        delay(100)
+                    }
+
+                    if (!isThisTagBlue) {
+                        allBlue = false
+                        notBlueTags.add(tag)
+                    }
+                }
+            }
+
+            if (allBlue) {
+                break // 全点了，去点招募
+            } else {
+                // 没全点，补点词条
+                for (tag in notBlueTags) {
+                    val r = report.tagRects[tag] ?: continue
+                    clicker.tap(r.left.toFloat(), r.top.toFloat())
+                    delay(SettingsStore.delayTag.toLong())
+                }
+            }
         }
 
         if (shouldStop()) return false
-
-        onProgress("点时间")
-        delay(50)
-        val (tx, ty) = full.timePoint()
-        clicker.tap(tx, ty)
-
+        // 4. 点开始招募
         onProgress("点开始招募")
         val (sx, sy) = full.startPoint()
         delay(SettingsStore.delayStart.toLong())
