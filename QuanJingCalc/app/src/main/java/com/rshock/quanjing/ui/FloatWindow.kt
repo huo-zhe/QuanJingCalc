@@ -317,16 +317,10 @@ class FloatWindow private constructor(private val ctx: Context) {
         val r = rois ?: return
         ball?.visibility = View.GONE
 
-        // ★ 判断当前是不是面板模式
         val isPanelMode = SettingsStore.mode == "panel"
 
         CoroutineScope(Dispatchers.Default).launch {
             try {
-                val full = r.full
-                if (full != null) {
-                    val (tx, ty) = full.timePoint() // 去掉参数
-                    ClickAccessibilityService.instance?.tap(tx, ty)
-                }
                 val report = AutoRunner.analyze(r)
                 mainHandler.post {
                     ball?.visibility = View.VISIBLE
@@ -337,27 +331,33 @@ class FloatWindow private constructor(private val ctx: Context) {
                             else showToast("识别失败：${report.reason}")
                         }
                         is AutoRunner.Report2.Success -> {
-                            // ★ 核心分流
                             if (isPanelMode) {
                                 showResultPanel(report) // 走面板模式：弹列表
                             } else {
-                                // 走悬浮球模式：直接操作
                                 when (val a = report.advice) {
                                     is Advice.NoMatch -> showToast("无匹配角色")
                                     is Advice.NoLeader -> {
                                         val best = a.allCombos.firstOrNull()
                                         if (best != null) {
-                                            // ★ 补上点击词条的逻辑
                                             CoroutineScope(Dispatchers.Default).launch {
                                                 try {
                                                     AutoRunner.autoPick(best, report.tagRects)
+
+                                                    // ★ 点完词条后，去点时间
+                                                    val full = r.full
+                                                    if (full != null) {
+                                                        val (tx, ty) = full.timePoint()
+                                                        com.rshock.quanjing.auto.ClickAccessibilityService.instance?.tap(tx.toFloat(), ty.toFloat())
+                                                    }
+
                                                 } catch (_: Exception) {}
                                                 mainHandler.post {
                                                     showToast("已选中：${best.tags.joinToString("/")}\n请手动点「开始招募」")
                                                 }
                                             }
                                         }
-                                    }                                    is Advice.HasLeader -> showResultPanel(report)
+                                    }
+                                    is Advice.HasLeader -> showResultPanel(report)
                                 }
                             }
                         }
@@ -371,7 +371,6 @@ class FloatWindow private constructor(private val ctx: Context) {
             }
         }
     }
-
     private fun handleSuccess(report: AutoRunner.Report2.Success) {
         when (val a = report.advice) {
             is Advice.NoMatch -> showToast("无匹配角色")
@@ -491,9 +490,14 @@ class FloatWindow private constructor(private val ctx: Context) {
                     CoroutineScope(Dispatchers.Default).launch {
                         try {
                             AutoRunner.autoPick(combo, report.tagRects)
+                            val full = rois?.full
+                            if (full != null) {
+                                val (tx, ty) = full.timePoint()
+                                com.rshock.quanjing.auto.ClickAccessibilityService.instance?.tap(tx.toFloat(), ty.toFloat())
+                            }
                         } catch (_: Exception) {}
                         mainHandler.post {
-                            showToast("已选中：${combo.tags.joinToString("/")}")
+                            showToast("已选中：${combo.tags.joinToString("/")}\n请手动点「开始招募」")
                         }
                     }
                 }
@@ -572,7 +576,7 @@ class FloatWindow private constructor(private val ctx: Context) {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             setOnClickListener {
                 try { wm.removeView(root) } catch (_: Exception) {}
-
+                // ★ 延迟 200ms 等弹窗彻底消失再点
                 mainHandler.postDelayed({
                     HistoryStore.add(
                         ctx,
@@ -582,9 +586,14 @@ class FloatWindow private constructor(private val ctx: Context) {
                     CoroutineScope(Dispatchers.Default).launch {
                         try {
                             AutoRunner.autoPick(combo, report.tagRects)
+                            val full = rois?.full
+                            if (full != null) {
+                                val (tx, ty) = full.timePoint()
+                                com.rshock.quanjing.auto.ClickAccessibilityService.instance?.tap(tx.toFloat(), ty.toFloat())
+                            }
                         } catch (_: Exception) {}
                         mainHandler.post {
-                            showToast("已选中：${combo.tags.joinToString("/")}")
+                            showToast("已选中：${combo.tags.joinToString("/")}\n请手动点「开始招募」")
                         }
                     }
                 }, 200)

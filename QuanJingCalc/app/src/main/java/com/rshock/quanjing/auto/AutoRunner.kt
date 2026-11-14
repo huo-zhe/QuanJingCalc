@@ -104,6 +104,17 @@ object AutoRunner {
             if (inRecruitUI) {
                 try {
                     runInnerLoop(roiSet, onProgress, shouldStop, onLeaderFound)
+                    var missCount = 0
+                    while (!shouldStop() && missCount < 3) {
+                        val stillThere = StateDetector.hasColorInRect(startRect, START_COLOR, 60, 0.05f)
+                        if (stillThere) {
+                            missCount = 0
+                        } else {
+                            missCount++
+                        }
+                        delay(150)
+                    }
+                    if (shouldStop()) return
                 } catch (e: LeaderFoundException) {
                     return
                 }
@@ -244,14 +255,8 @@ object AutoRunner {
         val clicker = ClickAccessibilityService.instance ?: return false
         val BLUE = 0xFF2EBAF8.toInt()
 
-        onProgress("点时间")
-        delay(50)
-        val (tx, ty) = full.timePoint()
-        clicker.tap(tx, ty)
-
         var ocrReport: Report2.Success? = null
         var retryCount = 0
-
         // 核心循环：最多重试 3 次
         while (!shouldStop() && retryCount < 3) {
             if (ocrReport == null) {
@@ -287,17 +292,15 @@ object AutoRunner {
             for (i in 0..4) {
                 blueStatus[i] = StateDetector.hasColorInRect(pixelRects[i], BLUE, 60, 0.1f)
             }
-
             // 找出 OCR 结果中还没变蓝的词条
             val tagsToClickNow = tagsToPick.filterIndexed { _, tag ->
                 val posIndex = report.tags.indexOf(tag)
                 if (posIndex in 0..4) !blueStatus[posIndex] else true
             }
-
             if (tagsToClickNow.isEmpty()) {
-                break // 都蓝了，去点开始招募
+                onProgress("词条已全部选中")
+                break // 都蓝了，跳出循环去点时间和招募
             }
-
             // 点击没变蓝的词条
             for (tag in tagsToClickNow) {
                 val r = report.tagRects[tag] ?: continue
@@ -308,6 +311,12 @@ object AutoRunner {
         }
 
         if (shouldStop()) return false
+
+        onProgress("点时间")
+        delay(50)
+        val (tx, ty) = full.timePoint()
+        clicker.tap(tx, ty)
+
         onProgress("点开始招募")
         val (sx, sy) = full.startPoint()
         delay(SettingsStore.delayStart.toLong())
