@@ -168,8 +168,17 @@ object ConfigStore {
         return full to auto
     }
 
-    // ================= 保存与读取 =================
+    fun getDefaultFull(scaleW: Float, scaleH: Float): RoiFull {
+        val (full, _) = interpolate(scaleW, scaleH)
+        return full
+    }
 
+    fun getDefaultAuto(scaleW: Float, scaleH: Float): RoiAuto {
+        val (_, auto) = interpolate(scaleW, scaleH)
+        return auto
+    }
+
+    // ================= 保存与读取 =================
     fun saveFull(
         ctx: Context,
         p1x: Float, p1y: Float, p2x: Float, p2y: Float, p3x: Float, p3y: Float, p4x: Float, p4y: Float,
