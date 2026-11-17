@@ -80,11 +80,9 @@ object ConfigStore {
         cancelPoint = ColorPoint(full.timeX, full.timeY, 0xFF2EBAF8.toInt())
     )
 
-    // ================= 4段式自适应插值模型 =================
-
+    // ================= 自适应插值模型 =================
     private data class ResPoint(val w: Float, val h: Float, val full: RoiFull, val auto: RoiAuto)
-
-    // P1: 模拟器 (720x1280)
+    // P1:(720x1280)
     private val P1 = ResPoint(720f, 1280f, RoiFull(
         114.75f, 467.55f, 603.0f, 588.44f, 271.12f, 529.77f, 448.87f, 533.33f,
         181.12f, 343.11f, 567.0f, 1041.77f,
@@ -94,7 +92,7 @@ object ConfigStore {
         550.12f, 782.22f, 428.06f, 1045.33f, 573.75f, 74.66f, 424.12f, 1201.77f
     ))
 
-    // P2: 真机 B (1080x2160)
+    // P2:(1080x2160)
     private val P2 = ResPoint(1080f, 2160f, RoiFull(
         128.0f, 788.0f, 950.0f, 988.0f, 391.0f, 894.0f, 688.0f, 898.0f,
         246.0f, 572.0f, 875.0f, 1768.0f,
@@ -104,17 +102,17 @@ object ConfigStore {
         871.0f, 1308.0f, 659.0f, 1758.0f, 905.0f, 128.0f, 639.0f, 2016.0f
     ))
 
-    // P3: 模拟器 (1080x2340)
+    // P3:(1080x2340)
     private val P3 = ResPoint(1080f, 2340f, RoiFull(
-        88.15f, 855.83f, 988.15f, 1076.83f, 384.0f, 968.50f, 696.0f, 968.50f,
-        216.92f, 624.0f, 900.0f, 1902.33f,
-        236.08f, 912.17f, 540.0f, 912.17f, 842.08f, 912.17f, 236.08f, 1022.67f, 540.0f, 1022.67f
+        90.92f, 855.83f, 985.85f, 1079.0f, 383.08f, 959.83f, 696.92f, 979.33f,
+        216.92f, 632.67f, 912.0f, 1898.0f,
+        237.0f, 907.83f, 540.0f, 907.83f, 841.38f, 907.83f, 237.0f, 1019.42f, 540.0f, 1019.42f
     ), RoiAuto(
-        634.15f, 563.33f, 630.0f, 951.17f, 634.15f, 1339.0f, 634.15f, 1726.83f,
-        898.15f, 1438.67f, 660.0f, 1911.0f, 937.85f, 143.0f, 665.08f, 2199.17f
+        623.0f, 563.33f, 621.0f, 951.17f, 623.0f, 1339.0f, 623.0f, 1726.83f,
+        871.0f, 1438.67f, 659.0f, 1911.0f, 905.0f, 143.0f, 639.0f, 2199.17f
     ))
 
-    // P4: 真机 A (1220x2712)
+    // P4:(1220x2712)
     private val P4 = ResPoint(1220f, 2712f, RoiFull(
         104.37f, 997.83f, 1112.44f, 1254.47f, 434.97f, 1126.47f, 780.70f, 1125.09f,
         324.48f, 749.73f, 1010.07f, 2198.94f,
@@ -124,46 +122,69 @@ object ConfigStore {
         992.44f, 1650.58f, 761.33f, 2211.07f, 1038.19f, 193.74f, 737.21f, 2497.44f
     ))
 
+    // P5:(1440x3200)
+    private val P5 = ResPoint(1440f, 3200f, RoiFull(
+        126.89f, 1182.22f, 1313.1f, 1480.0f, 499.95f, 1326.66f, 923.85f, 1326.66f,
+        296.1f, 880.0f, 1214.1f, 2584.44f,
+        313.42f, 1254.44f, 711.89f, 1254.44f, 1118.47f, 1254.44f, 313.42f, 1403.33f, 711.89f, 1403.33f
+    ), RoiAuto(
+        830.84f, 886.28f, 863.07f, 1368.81f, 830.84f, 1851.32f, 830.84f, 2333.86f,
+        1128.37f, 1956.07f, 907.41f, 2643.65f, 1182.84f, 266.88f, 841.19f, 2927.43f
+    ))
+
     private fun interpolate(w: Float, h: Float): Pair<RoiFull, RoiAuto> {
-        val points = listOf(P1, P2, P3, P4).sortedBy { it.h }
+        // ★ 计算游戏画面的极限比例 (约 19.5:9)
+        val maxRatio = 19.5f / 9f
+        val currentRatio = h / w
+        // 如果屏幕比游戏极限还长，说明有黑边
+        val hasBlackBar = currentRatio > maxRatio
+        // 实际渲染高度（如果超出，按最大比例限制）
+        val effectiveH = if (hasBlackBar) w * maxRatio else h
+        // 顶部黑边的高度（所有 Y 坐标需要往下平移这么多）
+        val topOffset = if (hasBlackBar) (h - effectiveH) / 2f else 0f
+
+        val points = listOf(P1, P2, P3, P4, P5).sortedBy { it.h }
         var pA = points.first()
         var pB = points.last()
+
+        // 使用 effectiveH 来找区间
         for (i in 0 until points.size - 1) {
-            if (h >= points[i].h && h <= points[i + 1].h) {
+            if (effectiveH >= points[i].h && effectiveH <= points[i + 1].h) {
                 pA = points[i]; pB = points[i + 1]; break
             }
         }
-        // 超出最大范围或最小范围时，取两端的线做延伸
-        if (h < points.first().h) { pA = points[0]; pB = points[1] }
-        if (h > points.last().h) { pA = points[points.size - 2]; pB = points.last() }
+        if (effectiveH < points.first().h) { pA = points[0]; pB = points[1] }
+        if (effectiveH > points.last().h) { pA = points[points.size - 2]; pB = points.last() }
 
-        val ratioH = if (pB.h - pA.h == 0f) 0f else (h - pA.h) / (pB.h - pA.h)
+        val ratioH = if (pB.h - pA.h == 0f) 0f else (effectiveH - pA.h) / (pB.h - pA.h)
         val ratioW = if (pB.w - pA.w == 0f) 0f else (w - pA.w) / (pB.w - pA.w)
 
-        fun lerp(vA: Float, vB: Float, rH: Float, rW: Float): Float = vA + (vB - vA) * ((rH + rW) / 2f)
+        fun lerpX(vA: Float, vB: Float): Float = vA + (vB - vA) * ratioW
+        // ★ 注意这里：Y轴不仅要插值，最后还要加上顶部的黑边偏移
+        fun lerpY(vA: Float, vB: Float): Float = vA + (vB - vA) * ratioH + topOffset
 
         val full = RoiFull(
-            lerp(pA.full.x1, pB.full.x1, ratioH, ratioW), lerp(pA.full.y1, pB.full.y1, ratioH, ratioW),
-            lerp(pA.full.x2, pB.full.x2, ratioH, ratioW), lerp(pA.full.y2, pB.full.y2, ratioH, ratioW),
-            lerp(pA.full.x3, pB.full.x3, ratioH, ratioW), lerp(pA.full.y3, pB.full.y3, ratioH, ratioW),
-            lerp(pA.full.x4, pB.full.x4, ratioH, ratioW), lerp(pA.full.y4, pB.full.y4, ratioH, ratioW),
-            lerp(pA.full.timeX, pB.full.timeX, ratioH, ratioW), lerp(pA.full.timeY, pB.full.timeY, ratioH, ratioW),
-            lerp(pA.full.startX, pB.full.startX, ratioH, ratioW), lerp(pA.full.startY, pB.full.startY, ratioH, ratioW),
-            lerp(pA.full.tagX1, pB.full.tagX1, ratioH, ratioW), lerp(pA.full.tagY1, pB.full.tagY1, ratioH, ratioW),
-            lerp(pA.full.tagX2, pB.full.tagX2, ratioH, ratioW), lerp(pA.full.tagY2, pB.full.tagY2, ratioH, ratioW),
-            lerp(pA.full.tagX3, pB.full.tagX3, ratioH, ratioW), lerp(pA.full.tagY3, pB.full.tagY3, ratioH, ratioW),
-            lerp(pA.full.tagX4, pB.full.tagX4, ratioH, ratioW), lerp(pA.full.tagY4, pB.full.tagY4, ratioH, ratioW),
-            lerp(pA.full.tagX5, pB.full.tagX5, ratioH, ratioW), lerp(pA.full.tagY5, pB.full.tagY5, ratioH, ratioW)
+            lerpX(pA.full.x1, pB.full.x1), lerpY(pA.full.y1, pB.full.y1),
+            lerpX(pA.full.x2, pB.full.x2), lerpY(pA.full.y2, pB.full.y2),
+            lerpX(pA.full.x3, pB.full.x3), lerpY(pA.full.y3, pB.full.y3),
+            lerpX(pA.full.x4, pB.full.x4), lerpY(pA.full.y4, pB.full.y4),
+            lerpX(pA.full.timeX, pB.full.timeX), lerpY(pA.full.timeY, pB.full.timeY),
+            lerpX(pA.full.startX, pB.full.startX), lerpY(pA.full.startY, pB.full.startY),
+            lerpX(pA.full.tagX1, pB.full.tagX1), lerpY(pA.full.tagY1, pB.full.tagY1),
+            lerpX(pA.full.tagX2, pB.full.tagX2), lerpY(pA.full.tagY2, pB.full.tagY2),
+            lerpX(pA.full.tagX3, pB.full.tagX3), lerpY(pA.full.tagY3, pB.full.tagY3),
+            lerpX(pA.full.tagX4, pB.full.tagX4), lerpY(pA.full.tagY4, pB.full.tagY4),
+            lerpX(pA.full.tagX5, pB.full.tagX5), lerpY(pA.full.tagY5, pB.full.tagY5)
         )
         val auto = RoiAuto(
-            lerp(pA.auto.rank1X, pB.auto.rank1X, ratioH, ratioW), lerp(pA.auto.rank1Y, pB.auto.rank1Y, ratioH, ratioW),
-            lerp(pA.auto.rank2X, pB.auto.rank2X, ratioH, ratioW), lerp(pA.auto.rank2Y, pB.auto.rank2Y, ratioH, ratioW),
-            lerp(pA.auto.rank3X, pB.auto.rank3X, ratioH, ratioW), lerp(pA.auto.rank3Y, pB.auto.rank3Y, ratioH, ratioW),
-            lerp(pA.auto.rank4X, pB.auto.rank4X, ratioH, ratioW), lerp(pA.auto.rank4Y, pB.auto.rank4Y, ratioH, ratioW),
-            lerp(pA.auto.confirmX, pB.auto.confirmX, ratioH, ratioW), lerp(pA.auto.confirmY, pB.auto.confirmY, ratioH, ratioW),
-            lerp(pA.auto.recruitX, pB.auto.recruitX, ratioH, ratioW), lerp(pA.auto.recruitY, pB.auto.recruitY, ratioH, ratioW),
-            lerp(pA.auto.skipX, pB.auto.skipX, ratioH, ratioW), lerp(pA.auto.skipY, pB.auto.skipY, ratioH, ratioW),
-            lerp(pA.auto.closeX, pB.auto.closeX, ratioH, ratioW), lerp(pA.auto.closeY, pB.auto.closeY, ratioH, ratioW)
+            lerpX(pA.auto.rank1X, pB.auto.rank1X), lerpY(pA.auto.rank1Y, pB.auto.rank1Y),
+            lerpX(pA.auto.rank2X, pB.auto.rank2X), lerpY(pA.auto.rank2Y, pB.auto.rank2Y),
+            lerpX(pA.auto.rank3X, pB.auto.rank3X), lerpY(pA.auto.rank3Y, pB.auto.rank3Y),
+            lerpX(pA.auto.rank4X, pB.auto.rank4X), lerpY(pA.auto.rank4Y, pB.auto.rank4Y),
+            lerpX(pA.auto.confirmX, pB.auto.confirmX), lerpY(pA.auto.confirmY, pB.auto.confirmY),
+            lerpX(pA.auto.recruitX, pB.auto.recruitX), lerpY(pA.auto.recruitY, pB.auto.recruitY),
+            lerpX(pA.auto.skipX, pB.auto.skipX), lerpY(pA.auto.skipY, pB.auto.skipY),
+            lerpX(pA.auto.closeX, pB.auto.closeX), lerpY(pA.auto.closeY, pB.auto.closeY)
         )
         return full to auto
     }

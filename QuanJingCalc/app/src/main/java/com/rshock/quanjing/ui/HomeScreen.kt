@@ -35,7 +35,7 @@ fun HomeScreen(
     ) {
         Text("全境征才助手", fontSize = 26.sp)
         Spacer(Modifier.height(8.dp))
-        Text("v2.2", fontSize = 14.sp, color = MaterialTheme.colorScheme.outline)
+        Text("v2.3", fontSize = 14.sp, color = MaterialTheme.colorScheme.outline)
         Spacer(Modifier.height(32.dp))
 
         // 状态
