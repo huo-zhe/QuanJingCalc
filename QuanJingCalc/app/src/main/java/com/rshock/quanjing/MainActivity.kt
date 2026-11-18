@@ -210,7 +210,16 @@ class MainActivity : ComponentActivity() {
             (150 * dp).toInt(), (150 * dp).toInt(),
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT
-        ).apply { gravity = Gravity.CENTER; x = 0; y = 300 }
+        ).apply {
+            gravity = Gravity.CENTER; x = 0; y = 300
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                setFitInsetsTypes(0)
+            }
+        }
 
         center.setOnTouchListener(object : View.OnTouchListener {
             var ix = 0; var iy = 0; var tx = 0f; var ty = 0f
@@ -451,6 +460,20 @@ class MainActivity : ComponentActivity() {
             val x1 = points[0].x; val y1 = points[0].y; val x2 = points[1].x; val y2 = points[1].y; val x3 = points[2].x; val y3 = points[2].y; val x4 = points[3].x
             val colW1 = x3 - x1; val colW2 = x4 - x3
             val tagCenters = listOf(PointF(x1 + colW1 / 2f, (y1 + y3) / 2f), PointF(x1 + colW1 + colW2 / 2f, (y1 + y3) / 2f), PointF(x1 + colW1 + colW2 + (x2 - (x1 + colW1 + colW2)) / 2f, (y1 + y3) / 2f), PointF(x1 + colW1 / 2f, (y3 + y2) / 2f), PointF(x1 + colW1 + colW2 / 2f, (y3 + y2) / 2f))
+
+            android.util.Log.d("QJ_Default", "=== 6点校准日志 ($screenW x $screenH) ===")
+            android.util.Log.d("QJ_Default", "点1(左上): ${points[0].x}f, ${points[0].y}f")
+            android.util.Log.d("QJ_Default", "点2(右下): ${points[1].x}f, ${points[1].y}f")
+            android.util.Log.d("QJ_Default", "点3(1行1列): ${points[2].x}f, ${points[2].y}f")
+            android.util.Log.d("QJ_Default", "点4(1行2列): ${points[3].x}f, ${points[3].y}f")
+            android.util.Log.d("QJ_Default", "时间: ${points[4].x}f, ${points[4].y}f")
+            android.util.Log.d("QJ_Default", "开始招募: ${points[5].x}f, ${points[5].y}f")
+            android.util.Log.d("QJ_Default", "词条1: ${tagCenters[0].x}f, ${tagCenters[0].y}f")
+            android.util.Log.d("QJ_Default", "词条2: ${tagCenters[1].x}f, ${tagCenters[1].y}f")
+            android.util.Log.d("QJ_Default", "词条3: ${tagCenters[2].x}f, ${tagCenters[2].y}f")
+            android.util.Log.d("QJ_Default", "词条4: ${tagCenters[3].x}f, ${tagCenters[3].y}f")
+            android.util.Log.d("QJ_Default", "词条5: ${tagCenters[4].x}f, ${tagCenters[4].y}f")
+
             ConfigStore.saveFull(this, points[0].x, points[0].y, points[1].x, points[1].y, points[2].x, points[2].y, points[3].x, points[3].y, points[4].x, points[4].y, points[5].x, points[5].y, tagCenters[0].x, tagCenters[0].y, tagCenters[1].x, tagCenters[1].y, tagCenters[2].x, tagCenters[2].y, tagCenters[3].x, tagCenters[3].y, tagCenters[4].x, tagCenters[4].y)
             cancelIdle(); clearBase()
             try { wm.removeView(overlay) } catch (_: Exception) {}
@@ -479,7 +502,15 @@ class MainActivity : ComponentActivity() {
         }
 
         val overlayType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
-        val overlayLp = WindowManager.LayoutParams(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT, overlayType, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or WindowManager.LayoutParams.FLAG_FULLSCREEN, PixelFormat.TRANSLUCENT).apply { gravity = Gravity.TOP or Gravity.START; x = 0; y = 0 }
+        val overlayLp = WindowManager.LayoutParams(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT, overlayType, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or WindowManager.LayoutParams.FLAG_FULLSCREEN, PixelFormat.TRANSLUCENT).apply { gravity = Gravity.TOP or Gravity.START; x = 0; y = 0
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                setFitInsetsTypes(0)
+            }
+        }
         val btnBarLp = WindowManager.LayoutParams(WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT, overlayType, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT).apply { gravity = Gravity.BOTTOM or Gravity.START; x = 20.dpToPx(); y = 50.dpToPx() }
         try { wm.addView(overlay, overlayLp) } catch (_: Exception) {}
         try { wm.addView(btnBar, btnBarLp) } catch (_: Exception) {}
@@ -488,8 +519,11 @@ class MainActivity : ComponentActivity() {
     private fun showCalibrateAuto() {
         try { FloatWindow.get(this).hide() } catch (_: Exception) {}
         val wm = getSystemService(WINDOW_SERVICE) as WindowManager
-        val screenW = resources.displayMetrics.widthPixels
-        val screenH = resources.displayMetrics.heightPixels
+        val metrics = android.util.DisplayMetrics()
+        @Suppress("DEPRECATION")
+        wm.defaultDisplay.getRealMetrics(metrics)
+        val screenW = metrics.widthPixels
+        val screenH = metrics.heightPixels
         val dp = resources.displayMetrics.density
         fun Int.dpToPx() = (this * dp).toInt()
 
@@ -697,6 +731,17 @@ class MainActivity : ComponentActivity() {
 
         confirmBtn.setOnClickListener {
             if (points.size < 8) return@setOnClickListener
+
+            android.util.Log.d("QJ_Default", "=== 8点校准日志 ($screenW x $screenH) ===")
+            android.util.Log.d("QJ_Default", "榜单1: ${points[0].x}f, ${points[0].y}f")
+            android.util.Log.d("QJ_Default", "榜单2: ${points[1].x}f, ${points[1].y}f")
+            android.util.Log.d("QJ_Default", "榜单3: ${points[2].x}f, ${points[2].y}f")
+            android.util.Log.d("QJ_Default", "榜单4: ${points[3].x}f, ${points[3].y}f")
+            android.util.Log.d("QJ_Default", "确定: ${points[4].x}f, ${points[4].y}f")
+            android.util.Log.d("QJ_Default", "录取: ${points[5].x}f, ${points[5].y}f")
+            android.util.Log.d("QJ_Default", "SKIP: ${points[6].x}f, ${points[6].y}f")
+            android.util.Log.d("QJ_Default", "关闭: ${points[7].x}f, ${points[7].y}f")
+
             ConfigStore.saveAuto(this, points[0].x, points[0].y, points[1].x, points[1].y, points[2].x, points[2].y, points[3].x, points[3].y, points[4].x, points[4].y, points[5].x, points[5].y, points[6].x, points[6].y, points[7].x, points[7].y)
             cancelIdle(); clearBase()
             try { wm.removeView(overlay) } catch (_: Exception) {}
@@ -727,7 +772,15 @@ class MainActivity : ComponentActivity() {
         }
 
         val overlayType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
-        val overlayLp = WindowManager.LayoutParams(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT, overlayType, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or WindowManager.LayoutParams.FLAG_FULLSCREEN, PixelFormat.TRANSLUCENT).apply { gravity = Gravity.TOP or Gravity.START; x = 0; y = 0 }
+        val overlayLp = WindowManager.LayoutParams(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT, overlayType, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or WindowManager.LayoutParams.FLAG_FULLSCREEN, PixelFormat.TRANSLUCENT).apply { gravity = Gravity.TOP or Gravity.START; x = 0; y = 0
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                setFitInsetsTypes(0)
+            }
+        }
         val btnBarLp = WindowManager.LayoutParams(WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT, overlayType, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT).apply { gravity = Gravity.BOTTOM or Gravity.START; x = 15.dpToPx(); y = 50.dpToPx() }
         val toggleBtnLp = WindowManager.LayoutParams(WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT, overlayType, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT).apply { gravity = Gravity.BOTTOM or Gravity.START; x = 20.dpToPx(); y = 283.dpToPx() }
 
